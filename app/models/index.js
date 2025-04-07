@@ -1,0 +1,10 @@
+exports.role = require('./roles_model');
+exports.subRole = require('./subRoles_model.js');
+exports.user = require('./user_model');
+exports.client = require('./client_model');
+exports.clientUsers = require('./clientUsers_model.js');
+exports.productCategory = require('./productCategory');
+exports.product = require('./product_model.js');
+exports.bill = require('./bill_model.js');
+exports.billPage = require('./billPage_model.js');
+exports.stock = require('./stock.js');
