@@ -57,12 +57,12 @@ module.exports = {
         // If a specific ID is provided, return only that product
         // if (_id) {
           let data = await db.billPage
-            .findOne(filterQuery)
+            .find(filterQuery)
             // .populate(populateValues)
   
             console.log('singleData',data);
     
-          if (!data) {
+           if (!data) {
             return res.clientError({ msg: responseMessages[1014] });
           }
     

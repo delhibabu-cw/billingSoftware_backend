@@ -12,7 +12,7 @@ const purchaseBasedSchema = new mongoose.Schema({
 
 const productBasedSchema = new mongoose.Schema({
     name: { type: String, trim: true },
-    productId: { type: String, trim: true },
+    productId: { type: String, trim: true, unique: true, sparse: true },
     _id: { type: String, trim: true },
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'client' },
     price: { type: Number, default: 0 },

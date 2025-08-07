@@ -5,134 +5,276 @@ const { mongoose } = require("../services/imports");
 const { createSlug } = require("../utils/common_utils");
 
 let skuCounter = 0;
-
-function generateSKU(category, product) {
+async function generateSKU(category, product, clientId) {
   const extractCode = (name) => {
-    const cleanName = name.replace(/^\d+\s*/, "");
+    const cleanName = name.replace(/^\d+\s*/, "").trim();
     return cleanName.substring(0, 3).toUpperCase();
   };
+
   const productCode = extractCode(product);
-  skuCounter += 1;
-  const skuNumber = skuCounter.toString().padStart(3, "0");
-  return `PRO${productCode}${skuNumber}`;
+  const prefix = `PRO${productCode}`;
+  const regexPattern = new RegExp(`^${prefix}(\\d{3})$`);
+
+  const [productBarcodes, stockBarcodes] = await Promise.all([
+    db.product.find({ clientId, barcode: { $regex: regexPattern } }).select("barcode").lean(),
+    db.stock.find({ clientId, "products.productId": { $regex: regexPattern } }).select("products.productId").lean()
+  ]);
+
+  const allCodes = [
+    ...productBarcodes.map(p => p.barcode?.trim()),
+    ...stockBarcodes.map(s => s.products?.productId?.trim())
+  ].filter(Boolean);
+
+  let maxNumber = 0;
+  for (const code of allCodes) {
+    const match = code?.match(regexPattern);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNumber) maxNumber = num;
+    }
+  }
+
+  const nextNumber = maxNumber + 1;
+  const skuNumber = nextNumber.toString().padStart(3, "0");
+  const finalSKU = `${prefix}${skuNumber}`;
+
+  return finalSKU;
 }
 
+
 module.exports = {
-    createStock: async (req, res) => {
-        try {
-          const { clientId, stockCategory } = req.body;
-          const data = req.body[stockCategory] || req.body.data;
+    // createStock: async (req, res) => {
+    //     try {
+    //       const { clientId, stockCategory } = req.body;
+    //       const data = req.body[stockCategory] || req.body.data;
 
-          console.log("data",data);
+    //       console.log("data",data);
           
       
-          const client = await db.client.findById(clientId);
-          if (!client) {
-            return res.status(404).json({ message: "Client not found" });
-          }
+    //       const client = await db.client.findById(clientId);
+    //       if (!client) {
+    //         return res.status(404).json({ message: "Client not found" });
+    //       }
       
-          let createdProduct = null;
-          let productId = null;
+    //       let createdProduct = null;
+    //       let productId = null;
       
-          if (stockCategory === "products") {
-            const categoryDoc = await db.productCategory.findById(data.category);
-            const categoryName = categoryDoc?.name || "GEN";
-            const product_url = await createSlug(data.name);
+    //       if (stockCategory === "products") {
+    //         const categoryDoc = await db.productCategory.findById(data.category);
+    //         const categoryName = categoryDoc?.name || "GEN";
+    //         const product_url = await createSlug(data.name);
       
-            productId = generateSKU(categoryName, data.name);
-            const productPayload = {
-              ...data,
-              productId,
-              clientId,
-              product_url,
-              productAddedFromStock: "yes",
-            };
+    //         productId = generateSKU(categoryName, data.name);
+    //         const productPayload = {
+    //           ...data,
+    //           productId,
+    //           clientId,
+    //           product_url,
+    //           productAddedFromStock: "yes",
+    //         };
       
-            createdProduct = await db.product.create(productPayload);
+    //         createdProduct = await db.product.create(productPayload);
       
-            if (createdProduct?._id) {
-              await db.productCategory.findByIdAndUpdate(data.category, {
-                $inc: { products: 1 },
-                $push: { productItems: createdProduct._id },
-              });
-            } else {
-              return res.status(500).json({ message: "Product creation failed" });
-            }
-          }
+    //         if (createdProduct?._id) {
+    //           await db.productCategory.findByIdAndUpdate(data.category, {
+    //             $inc: { products: 1 },
+    //             $push: { productItems: createdProduct._id },
+    //           });
+    //         } else {
+    //           return res.status(500).json({ message: "Product creation failed" });
+    //         }
+    //       }
       
-          // Create stock object
-          const stockObject = {
-            clientId,
-            stockCategory,
-            status: "active",
-            isDeleted: false,
-          };
+    //       // Create stock object
+    //       const stockObject = {
+    //         clientId,
+    //         stockCategory,
+    //         status: "active",
+    //         isDeleted: false,
+    //       };
       
-          if (stockCategory === "purchase") {
-            stockObject.purchase = data;
-          } else if (stockCategory === "products") {
-            const price = Number(data?.price) || 0;
-            const profitMargin = Number(data?.profitMargin) || 0;
-            const actualPrice = Number(data?.actualPrice) || 0;
-            const gstAmountPerUnit = Number(data?.gstAmount) || 0;
-            const initialCount = Number(data?.count) || 0;
+    //       if (stockCategory === "purchase") {
+    //         stockObject.purchase = data;
+    //       } else if (stockCategory === "products") {
+    //         const price = Number(data?.price) || 0;
+    //         const profitMargin = Number(data?.profitMargin) || 0;
+    //         const actualPrice = Number(data?.actualPrice) || 0;
+    //         const gstAmountPerUnit = Number(data?.gstAmount) || 0;
+    //         const initialCount = Number(data?.count) || 0;
             
-            // ✅ Safe calculations
-            const totalGst = gstAmountPerUnit * initialCount;
-            const totalAmount = (actualPrice + gstAmountPerUnit) * initialCount;
+    //         // ✅ Safe calculations
+    //         const totalGst = gstAmountPerUnit * initialCount;
+    //         const totalAmount = (actualPrice + gstAmountPerUnit) * initialCount;
           
-            const countUpdates = [{
-              price,
-              profitMargin,
-              actualPrice,
-              gstAmount: totalGst,          // ✅ total GST for all units
-              count: initialCount,
-              totalAmount: totalAmount,     // ✅ total amount including GST
-              date: new Date(),
-            }];
+    //         const countUpdates = [{
+    //           price,
+    //           profitMargin,
+    //           actualPrice,
+    //           gstAmount: totalGst,          // ✅ total GST for all units
+    //           count: initialCount,
+    //           totalAmount: totalAmount,     // ✅ total amount including GST
+    //           date: new Date(),
+    //         }];
           
-            stockObject.products = {
-              ...data,
-              _id: createdProduct?._id,
-              productId,
-              actualPrice,
-              count: initialCount,
-              countUpdates,
-            };
-          }
+    //         stockObject.products = {
+    //           ...data,
+    //           _id: createdProduct?._id,
+    //           productId,
+    //           actualPrice,
+    //           count: initialCount,
+    //           countUpdates,
+    //         };
+    //       }
       
-          console.log("stockObject",stockObject);
+    //       console.log("stockObject",stockObject);
           
-          const newStock = await db.stock.create(stockObject);
+    //       const newStock = await db.stock.create(stockObject);
 
       
-          if(newStock && newStock?._id){
-            if(stockCategory === 'purchase'){
-                return res.success({
-                    msg: 'Purchase Added successfully',
-                    result: {
-                        stock : newStock
-                      },
-                  });
-            }else if(stockCategory === 'products'){
-                return res.success({
-                    msg: 'Stock Products created successfully',
-                    result: {
-                        product: createdProduct,
-                        stock: newStock,
-                      },
-                  });
-            }
-          }
+    //       if(newStock && newStock?._id){
+    //         if(stockCategory === 'purchase'){
+    //             return res.success({
+    //                 msg: 'Purchase Added successfully',
+    //                 result: {
+    //                     stock : newStock
+    //                   },
+    //               });
+    //         }else if(stockCategory === 'products'){
+    //             return res.success({
+    //                 msg: 'Stock Products created successfully',
+    //                 result: {
+    //                     product: createdProduct,
+    //                     stock: newStock,
+    //                   },
+    //               });
+    //         }
+    //       }
 
-          return res.clientError({
-            msg: responseMessages[1017],
-          });
-        } catch (error) {
-          errorHandlerFunction(res, error);
-        }
+    //       return res.clientError({
+    //         msg: responseMessages[1017],
+    //       });
+    //     } catch (error) {
+    //       errorHandlerFunction(res, error);
+    //     }
+    //   }
+    //   ,
+
+createStock: async (req, res) => {
+  try {
+    const { clientId, stockCategory } = req.body;
+    const data = req.body[stockCategory] || req.body.data;
+
+    console.log("📥 Incoming stock data:", data);
+    console.log("📦 Stock Category:", stockCategory);
+
+    const client = await db.client.findById(clientId);
+    if (!client) {
+      return res.status(404).json({ message: "Client not found" });
+    }
+
+    let createdProduct = null;
+    let productId = null;
+
+    const stockObject = {
+      clientId,
+      stockCategory,
+      status: "active",
+      isDeleted: false,
+    };
+
+    if (stockCategory === "products") {
+      const categoryDoc = await db.productCategory.findById(data.category);
+      const categoryName = categoryDoc?.name || "GEN";
+      const product_url = await createSlug(data.name);
+
+      // 🔧 Generate unique SKU
+      productId = await generateSKU(categoryName, data.name, clientId);
+      if (!productId) {
+        return res.status(400).json({ message: "Unable to generate productId" });
       }
-      ,
+
+      const productPayload = {
+        ...data,
+        productId,
+        clientId,
+        product_url,
+        productAddedFromStock: "yes",
+      };
+
+      createdProduct = await db.product.create(productPayload);
+      if (!createdProduct?._id) {
+        return res.status(500).json({ message: "Product creation failed" });
+      }
+
+      // 🗂 Update category
+      await db.productCategory.findByIdAndUpdate(data.category, {
+        $inc: { products: 1 },
+        $push: { productItems: createdProduct._id },
+      });
+
+      const price = Number(data?.price) || 0;
+      const profitMargin = Number(data?.profitMargin) || 0;
+      const actualPrice = Number(data?.actualPrice) || 0;
+      const gstAmountPerUnit = Number(data?.gstAmount) || 0;
+      const initialCount = Number(data?.count) || 0;
+
+      const totalGst = gstAmountPerUnit * initialCount;
+      const totalAmount = (actualPrice + gstAmountPerUnit) * initialCount;
+
+      const countUpdates = [{
+        price,
+        profitMargin,
+        actualPrice,
+        gstAmount: totalGst,
+        count: initialCount,
+        totalAmount,
+        date: new Date(),
+      }];
+
+      // ✅ Add only for 'products'
+      stockObject.products = {
+        ...data,
+        _id: createdProduct._id,
+        productId,
+        actualPrice,
+        count: initialCount,
+        countUpdates,
+      };
+    }
+
+    if (stockCategory === "purchase") {
+      // ✅ Add only for 'purchase'
+      stockObject.purchase = data;
+    }
+
+    console.log("🧾 Final stockObject for DB:", stockObject);
+
+    const newStock = await db.stock.create(stockObject);
+
+    if (newStock?._id) {
+      const response = {
+        msg: stockCategory === "purchase"
+          ? "Purchase Added successfully"
+          : "Stock Products created successfully",
+        result: stockCategory === "purchase"
+          ? { stock: newStock }
+          : { product: createdProduct, stock: newStock },
+      };
+
+      return res.success(response);
+    }
+
+    return res.clientError({
+      msg: responseMessages[1017],
+    });
+
+  } catch (error) {
+    errorHandlerFunction(res, error);
+  }
+}
+
+
+,
   getStock: async (req, res) => {
     try {
       console.log("decode", req.decoded);
